@@ -1,6 +1,6 @@
-# Panduan Instalasi Odoo Community Edition di Orange Pi (ARM Architecture)
+# Panduan Instalasi Odoo Community Edition di Orange Pi (Ubuntu 22.04, ARM Architecture)
 
-Panduan ini menjelaskan cara menginstal **Odoo 16.0 Community Edition** pada perangkat **Orange Pi** (seperti Orange Pi 3 LTS atau Orange Pi Zero 2) dengan prosesor berarsitektur ARM (ARM64 atau ARMv8-A) menggunakan **Ubuntu 22.04 (Jammy)** berbasis Armbian. Panduan ini dioptimalkan untuk kebutuhan sistem inventory dengan sumber daya terbatas.
+Panduan ini menjelaskan cara menginstal **Odoo 17.0 Community Edition** menggunakan skrip otomatis pada **Orange Pi 3 LTS** (ARM64) atau **Orange Pi Zero 2** (ARMv8-A) dengan Ubuntu 22.04 (Jammy) berbasis Armbian. Panduan ini dioptimalkan untuk kebutuhan sistem inventory dan mencakup penyesuaian untuk arsitektur ARM.
 
 ## Persyaratan
 - **Perangkat**: Orange Pi 3 LTS (2GB RAM, ARM64) atau Orange Pi Zero 2 (1GB RAM, ARMv8-A).
@@ -9,208 +9,173 @@ Panduan ini menjelaskan cara menginstal **Odoo 16.0 Community Edition** pada per
 - **Koneksi Internet**: Stabil untuk mengunduh paket.
 - **Akses Root/Sudo**: Diperlukan untuk instalasi.
 - **Ruang Disk Kosong**: Minimal 5GB untuk Odoo dan dependensi.
-
-**Catatan**: Orange Pi Zero 2 memiliki RAM terbatas (1GB), jadi gunakan hanya modul yang diperlukan (misalnya, Inventory) dan tambahkan swap space untuk performa optimal.
+- **Sistem Bersih**: Pastikan instalasi Odoo sebelumnya sudah dihapus (lihat `uninstall_odoo_README.markdown`).
 
 ## Langkah-Langkah Instalasi
 
-### 1. Persiapan Sistem
-1. **Unduh dan Flash Armbian**:
-   - Unduh image Armbian Ubuntu 22.04 (Jammy) untuk perangkat Anda dari [Armbian Downloads](https://www.armbian.com/).
-   - Flash image ke microSD menggunakan alat seperti **Balena Etcher**.
-   - Masukkan microSD ke Orange Pi, nyalakan, dan ikuti konfigurasi awal Armbian (buat pengguna, kata sandi, dll.).
+### 1. Verifikasi Sistem Bersih
+Pastikan tidak ada sisa instalasi Odoo sebelumnya:
+```bash
+sudo ls /opt/odoo
+sudo ls /odoo/odoo-server
+sudo ls /odoo/custom
+sudo ls /etc/odoo*
+sudo ls /var/log/odoo
+sudo systemctl status odoo
+dpkg -l | grep postgresql
+sudo ls /var/lib/postgresql
+sudo ls /usr/local/lib/wkhtmltox*
+sudo ls /usr/local/share/wkhtmltox*
+sudo ls /usr/local/bin/wkhtmltopdf
+```
+Jika ada file/direktori/layanan yang ditemukan, ikuti panduan pembersihan di `uninstall_odoo_README.markdown` (ID: `c74410a1-7ffa-4e7e-a921-3309e8dc9a87`).
 
-2. **Perbarui Sistem**:
-   ```bash
-   sudo apt update && sudo apt upgrade -y
-   ```
+### 2. Perbarui Sistem
+Perbarui semua paket di sistem Anda:
+```bash
+sudo apt update && sudo apt upgrade -y
+```
 
-3. **Instal Alat Dasar**:
-   ```bash
-   sudo apt install -y nano git wget curl
-   ```
+### 3. Tambah Swap Space (untuk Orange Pi Zero 2)
+Orange Pi Zero 2 memiliki RAM 1GB, yang terbatas untuk Odoo 17.0. Tambahkan swap space untuk mencegah crash:
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
 
-### 2. Instal Dependensi Odoo
-Odoo memerlukan PostgreSQL, Python, dan beberapa pustaka tambahan.
+**Catatan**: Langkah ini opsional untuk Orange Pi 3 LTS (2GB RAM) tetapi sangat disarankan untuk Zero 2.
 
-1. **Instal PostgreSQL**:
-   ```bash
-   sudo apt install -y postgresql
-   sudo -u postgres createuser -s odoo
-   ```
+### 4. Unduh Skrip Instalasi
+Unduh skrip instalasi Odoo 17.0 dari Yenthe666:
+```bash
+wget https://raw.githubusercontent.com/Yenthe666/InstallScript/17.0/odoo_install.sh
+```
 
-2. **Instal Dependensi Sistem**:
-   ```bash
-   sudo apt install -y python3-pip python3-dev libxml2-dev libxslt1-dev zlib1g-dev \
-   libldap2-dev libsasl2-dev libjpeg-dev libpq-dev build-essential
-   ```
+**Catatan**: Untuk versi lain (misalnya, Odoo 16.0), ganti `17.0` dengan versi yang diinginkan (misalnya, `16.0`) pada URL.
 
-3. **Instal wkhtmltopdf (untuk laporan PDF)**:
-   ```bash
-   sudo apt install -y xfonts-75dpi xfonts-base libxrender1 libfontconfig1
-   sudo wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_arm64.deb
-   sudo dpkg -i wkhtmltox_0.12.6.1-2.jammy_arm64.deb
-   sudo apt install -f
-   ```
-   Verifikasi instalasi:
-   ```bash
-   wkhtmltopdf --version
-   ```
-   Output yang diharapkan: `wkhtmltopdf 0.12.6.1 (with patched qt)`.
+### 5. Jadikan Skrip Dapat Dieksekusi
+Beri izin eksekusi pada skrip:
+```bash
+sudo chmod +x odoo_install.sh
+```
 
-### 3. Unduh dan Instal Odoo
-1. **Unduh Odoo 16.0 dari GitHub**:
-   ```bash
-   sudo git clone --depth 1 --branch 16.0 https://www.github.com/odoo/odoo /opt/odoo
-   ```
+### 6. Modifikasi Skrip untuk ARM (wkhtmltopdf)
+Skrip otomatis mungkin menginstal `wkhtmltopdf` versi x86_64, yang tidak kompatibel dengan ARM. Modifikasi skrip untuk menggunakan versi ARM64:
+```bash
+nano odoo_install.sh
+```
+Cari baris yang menginstal `wkhtmltopdf` (biasanya berisi `apt-get install wkhtmltopdf`). Ganti dengan:
+```bash
+wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_arm64.deb
+sudo dpkg -i wkhtmltox_0.12.6.1-2.jammy_arm64.deb
+sudo apt install -f
+```
+Simpan dengan `Ctrl+O`, lalu keluar dengan `Ctrl+X`.
 
-2. **Instal Dependensi Python**:
-   ```bash
-   cd /opt/odoo
-   sudo pip3 install -r requirements.txt
-   ```
+### 7. Jalankan Skrip Instalasi
+Jalankan skrip untuk menginstal Odoo dan dependensinya (proses ini memakan waktu 10-20 menit):
+```bash
+sudo ./odoo_install.sh
+```
 
-   **Catatan**: Jika ada masalah dengan `pip3`, perbarui pip:
-   ```bash
-   sudo pip3 install --upgrade pip
-   ```
+**Catatan**: Jika terjadi error terkait `wkhtmltopdf` atau dependensi lain, periksa log di Terminal dan lihat bagian **Troubleshooting**.
 
-### 4. Konfigurasi Odoo
-1. **Buat File Konfigurasi**:
-   ```bash
-   sudo nano /etc/odoo.conf
-   ```
-   Tambahkan isi berikut:
-   ```ini
-   [options]
-   admin_passwd = your_secure_password
-   http_port = 8069
-   logfile = /var/log/odoo/odoo.log
-   addons_path = /opt/odoo/addons
-   db_host = False
-   db_port = False
-   db_user = odoo
-   db_password = False
-   ```
-   Ganti `your_secure_password` dengan kata sandi yang kuat. Simpan dengan `Ctrl+O`, lalu keluar dengan `Ctrl+X`.
+### 8. Optimasi Konfigurasi untuk RAM Terbatas
+Untuk Orange Pi Zero 2, edit file konfigurasi Odoo untuk mengurangi penggunaan memori:
+```bash
+sudo nano /etc/odoo-server.conf
+```
+Tambahkan atau ubah baris berikut:
+```ini
+[options]
+workers = 0
+limit_memory_hard = 268435456
+limit_memory_soft = 214748364
+```
+Simpan dengan `Ctrl+O`, lalu keluar dengan `Ctrl+X`. Restart layanan Odoo:
+```bash
+sudo systemctl restart odoo
+```
 
-2. **Buat Direktori Log**:
-   ```bash
-   sudo mkdir /var/log/odoo
-   sudo chown $USER:$USER /var/log/odoo
-   ```
+### 9. Verifikasi Instalasi
+Periksa status layanan Odoo:
+```bash
+sudo systemctl status odoo
+```
+Pastikan statusnya `active (running)`.
 
-3. **Uji Coba Jalankan Odoo**:
-   ```bash
-   python3 /opt/odoo/odoo-bin -c /etc/odoo.conf
-   ```
-   Jika berhasil, Odoo akan berjalan di `http://localhost:8069` atau `http://<IP_ORANGE_PI>:8069`.
+Verifikasi `wkhtmltopdf`:
+```bash
+wkhtmltopdf --version
+```
+Output yang diharapkan: `wkhtmltopdf 0.12.6.1 (with patched qt)`.
 
-### 5. Jalankan Odoo sebagai Layanan
-1. **Buat File Layanan**:
-   ```bash
-   sudo nano /etc/systemd/system/odoo.service
-   ```
-   Tambahkan isi berikut:
-   ```ini
-   [Unit]
-   Description=Odoo ERP
-   After=network.target postgresql.service
+### 10. Akses Odoo di Browser
+Buka browser dan akses:
+```
+http://<IP_ORANGE_PI>:8069
+```
+Ikuti langkah-langkah untuk membuat database baru:
+- Masukkan nama database (misalnya, `inventory_db`).
+- Atur kata sandi admin.
+- Pilih bahasa dan negara.
 
-   [Service]
-   Type=simple
-   User=$USER
-   ExecStart=/usr/bin/python3 /opt/odoo/odoo-bin -c /etc/odoo.conf
-   Restart=always
+### 11. Konfigurasi Awal untuk Sistem Inventory
+1. Masuk ke Odoo melalui browser.
+2. Buka menu **Apps**, cari dan instal modul **Inventory**.
+3. Buka **Inventory** > **Configuration** > **Settings** untuk mengaktifkan fitur seperti **Multi-Warehouse** atau **Barcode** sesuai kebutuhan.
+4. Tambahkan informasi perusahaan di **Settings** > **General Settings**.
 
-   [Install]
-   WantedBy=multi-user.target
-   ```
+## Informasi Penting
+- **Lokasi Instalasi**: Odoo terinstal di `/odoo/odoo-server/`.
+- **File Konfigurasi**: File konfigurasi berada di `/etc/odoo-server.conf`. Periksa file ini untuk *Master Password* yang dibuat oleh skrip.
+- **Log**: Log Odoo berada di `/var/log/odoo/odoo-server.log`.
+- **Pendingin (Orange Pi 3 LTS)**: Pasang heatsink atau kipas untuk mencegah overheating saat memproses data besar.
+- **Odoo 17.0 vs 16.0**: Odoo 17.0 lebih berat. Untuk Orange Pi Zero 2, pertimbangkan Odoo 16.0 (lihat panduan manual ID: `2a95dcb6-751e-4ca7-9f93-74aac47abdc8`) jika performa lambat.
 
-2. **Aktifkan dan Jalankan Layanan**:
-   ```bash
-   sudo systemctl enable odoo
-   sudo systemctl start odoo
-   ```
-
-3. **Periksa Status Layanan**:
-   ```bash
-   sudo systemctl status odoo
-   ```
-   Pastikan statusnya `active (running)`.
-
-### 6. Konfigurasi Awal Odoo untuk Sistem Inventory
-1. **Akses Odoo**:
-   Buka browser dan kunjungi `http://<IP_ORANGE_PI>:8069`.
-   Buat database baru:
-   - Masukkan nama database (misalnya, `inventory_db`).
-   - Atur kata sandi admin.
-   - Pilih bahasa dan negara.
-
-2. **Instal Modul Inventory**:
-   - Masuk ke menu **Apps**.
-   - Cari dan instal modul **Inventory**.
-   - (Opsional) Instal modul tambahan seperti **Sales** atau **Purchase** jika diperlukan.
-
-3. **Konfigurasi Inventory**:
-   - Buka **Inventory** > **Configuration** > **Settings**.
-   - Aktifkan fitur seperti **Multi-Warehouse** atau **Barcode** sesuai kebutuhan.
-   - Tambahkan informasi perusahaan di **Settings** > **General Settings**.
-
-### 7. Optimasi untuk Orange Pi
-- **Tambah Swap Space** (khususnya untuk Orange Pi Zero 2):
-  ```bash
-  sudo fallocate -l 2G /swapfile
-  sudo chmod 600 /swapfile
-  sudo mkswap /swapfile
-  sudo swapon /swapfile
-  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-  ```
-- **Batasi Modul**: Hanya instal modul yang diperlukan (misalnya, Inventory) untuk menghemat RAM.
-- **Pendingin**: Pasang heatsink atau kipas pada Orange Pi 3 LTS untuk mencegah overheating saat Odoo memproses data besar.
-
-### 8. Troubleshooting Umum
+## Troubleshooting
 - **Error wkhtmltopdf**:
-  Jika PDF tidak dihasilkan, pastikan `wkhtmltopdf` versi 0.12.6.1 dengan Qt patch terinstal:
+  Jika PDF tidak dihasilkan, pastikan versi ARM64 terinstal:
   ```bash
   wkhtmltopdf --version
   ```
-  Jika tidak menunjukkan `(with patched qt)`, instal ulang seperti pada Langkah 2.3.
-
-- **Odoo Tidak Berjalan**:
-  Periksa log di `/var/log/odoo/odoo.log`:
+  Jika tidak menunjukkan `(with patched qt)`, instal ulang:
   ```bash
-  sudo cat /var/log/odoo/odoo.log
+  sudo apt purge -y wkhtmltopdf wkhtmltox
+  wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_arm64.deb
+  sudo dpkg -i wkhtmltox_0.12.6.1-2.jammy_arm64.deb
+  sudo apt install -f
   ```
 
-- **Database Error**:
+- **Odoo Tidak Berjalan**:
+  Periksa log:
+  ```bash
+  sudo cat /var/log/odoo/odoo-server.log
+  ```
   Pastikan PostgreSQL berjalan:
   ```bash
   sudo systemctl status postgresql
   ```
 
-- **Memori Rendah**:
-  Untuk Orange Pi Zero 2, nonaktifkan fitur Odoo yang tidak diperlukan di `/etc/odoo.conf`:
-  ```ini
-  workers = 0
-  limit_memory_hard = 268435456
-  limit_memory_soft = 214748364
+- **Memori Rendah (Zero 2)**:
+  Jika Odoo crash, periksa swap space:
+  ```bash
+  swapon -s
+  ```
+  Tambahkan lebih banyak swap jika perlu:
+  ```bash
+  sudo fallocate -l 4G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
   ```
 
-### 9. Backup dan Pemeliharaan
-- **Backup Database**:
+- **Konflik File Konfigurasi**:
+  Jika ada error terkait `/etc/odoo-server.conf`, pastikan tidak ada file duplikat:
   ```bash
-  sudo -u postgres pg_dump inventory_db > inventory_db_backup.sql
+  sudo rm -f /etc/odoo.conf /etc/odoo-server.conf
+  sudo ./odoo_install.sh
   ```
-- **Perbarui Odoo**:
-  ```bash
-  cd /opt/odoo
-  sudo git pull origin 16.0
-  sudo pip3 install -r requirements.txt
-  sudo systemctl restart odoo
-  ```
-
-## Catatan
-- **Versi Odoo**: Panduan ini menggunakan Odoo 16.0. Untuk versi lain (misalnya, 17.0), ubah branch pada perintah `git clone` (Langkah 3.1).
-- **Sumber Daya**: Orange Pi 3 LTS lebih cocok untuk menjalankan beberapa modul, sedangkan Orange Pi Zero 2 lebih terbatas dan memerlukan optimasi.
-- **Dokumentasi Resmi**: Lihat [Odoo Documentation](https://www.odoo.com/documentation/16.0/) untuk panduan lanjutan tentang modul Inventory.
